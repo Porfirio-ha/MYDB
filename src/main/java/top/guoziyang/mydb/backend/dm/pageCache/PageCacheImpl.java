@@ -15,19 +15,19 @@ import top.guoziyang.mydb.backend.utils.Panic;
 import top.guoziyang.mydb.common.Error;
 
 public class PageCacheImpl extends AbstractCache<Page> implements PageCache {
-    
-    private static final int MEM_MIN_LIM = 10;
-    public static final String DB_SUFFIX = ".db";
+
+    private static final int MEM_MIN_LIM = 10;//缓存空间的最小限制
+    public static final String DB_SUFFIX = ".db";//文件后缀
 
     private RandomAccessFile file;
     private FileChannel fc;
     private Lock fileLock;
 
-    private AtomicInteger pageNumbers;
+    private AtomicInteger pageNumbers;  //记录当前打开的数据库文件有多少页 并不是缓存中有多少页 具体指代当前数据库文件的大小
 
     PageCacheImpl(RandomAccessFile file, FileChannel fileChannel, int maxResource) {
         super(maxResource);
-        if(maxResource < MEM_MIN_LIM) {
+        if (maxResource < MEM_MIN_LIM) {
             Panic.panic(Error.MemTooSmallException);
         }
         long length = 0;
@@ -39,18 +39,24 @@ public class PageCacheImpl extends AbstractCache<Page> implements PageCache {
         this.file = file;
         this.fc = fileChannel;
         this.fileLock = new ReentrantLock();
-        this.pageNumbers = new AtomicInteger((int)length / PAGE_SIZE);
+        this.pageNumbers = new AtomicInteger((int) length / PAGE_SIZE);
     }
 
+    /**
+     * 创建新的页面并返回页号
+     */
     public int newPage(byte[] initData) {
         int pgno = pageNumbers.incrementAndGet();
         Page pg = new PageImpl(pgno, initData, null);
-        flush(pg);
+        flush(pg);  //将新增的内存里的页面写回数据库--》实际文件会增加一个页面大小（8k）
         return pgno;
     }
 
+    /**
+     * 通过页号获得缓存中的页面
+     */
     public Page getPage(int pgno) throws Exception {
-        return get((long)pgno);
+        return get((long) pgno);
     }
 
     /**
@@ -58,7 +64,7 @@ public class PageCacheImpl extends AbstractCache<Page> implements PageCache {
      */
     @Override
     protected Page getForCache(long key) throws Exception {
-        int pgno = (int)key;
+        int pgno = (int) key;
         long offset = PageCacheImpl.pageOffset(pgno);
 
         ByteBuffer buf = ByteBuffer.allocate(PAGE_SIZE);
@@ -66,29 +72,38 @@ public class PageCacheImpl extends AbstractCache<Page> implements PageCache {
         try {
             fc.position(offset);
             fc.read(buf);
-        } catch(IOException e) {
+        } catch (IOException e) {
             Panic.panic(e);
         }
         fileLock.unlock();
         return new PageImpl(pgno, buf.array(), this);
     }
 
+    /**
+     * 脏数据写回
+     *
+     * @param pg
+     */
     @Override
     protected void releaseForCache(Page pg) {
-        if(pg.isDirty()) {
+        if (pg.isDirty()) {
             flush(pg);
             pg.setDirty(false);
         }
     }
 
     public void release(Page page) {
-        release((long)page.getPageNumber());
+        release((long) page.getPageNumber());
     }
 
+    @Override
     public void flushPage(Page pg) {
         flush(pg);
     }
 
+    /**
+     * 将该页的内存中的数据写回物理内存中
+     */
     private void flush(Page pg) {
         int pgno = pg.getPageNumber();
         long offset = pageOffset(pgno);
@@ -99,13 +114,16 @@ public class PageCacheImpl extends AbstractCache<Page> implements PageCache {
             fc.position(offset);
             fc.write(buf);
             fc.force(false);
-        } catch(IOException e) {
+        } catch (IOException e) {
             Panic.panic(e);
         } finally {
             fileLock.unlock();
         }
     }
 
+    /**
+     * 截断
+     */
     public void truncateByBgno(int maxPgno) {
         long size = pageOffset(maxPgno + 1);
         try {
@@ -132,7 +150,7 @@ public class PageCacheImpl extends AbstractCache<Page> implements PageCache {
     }
 
     private static long pageOffset(int pgno) {
-        return (pgno-1) * PAGE_SIZE;
+        return (pgno - 1) * PAGE_SIZE;
     }
-    
+
 }

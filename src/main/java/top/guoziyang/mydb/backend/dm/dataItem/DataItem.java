@@ -10,6 +10,9 @@ import top.guoziyang.mydb.backend.dm.page.Page;
 import top.guoziyang.mydb.backend.utils.Parser;
 import top.guoziyang.mydb.backend.utils.Types;
 
+/**
+ *DateItem 是DM层向上层提供的数据抽象。上层通过地址，向Dm请求对应的DataItem 在获取到其中的数据
+ */
 public interface DataItem {
     SubArray data();
     
